@@ -25,8 +25,6 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -36,6 +34,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - name: Build static site
         run: pnpm build:pages
         env:
