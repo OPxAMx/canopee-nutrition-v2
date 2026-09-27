@@ -1,0 +1,905 @@
+Oui. Voici une première version **professionnelle et exploitable comme cahier des charges**, pensée pour pouvoir ensuite passer à la conception UX/UI, à la base de données et au développement.
+
+:::writing{variant="document" id="58321" title="Cahier des charges — Application de culture intelligente"}
+# CAHIER DES CHARGES
+## Application de planification, suivi et diagnostic pour la culture
+
+**Nom de travail :** Culture Planner  
+**Version :** 1.0 — Concept fonctionnel  
+**Objectif :** créer un environnement numérique permettant à un utilisateur de modéliser son espace de culture, renseigner son matériel et ses conditions environnementales, suivre ses cultures et recevoir des recommandations adaptées à son niveau.
+
+---
+
+# 1. Vision du projet
+
+L'application doit permettre à n'importe quel utilisateur de transformer son espace réel de culture en un **modèle numérique exploitable**.
+
+L'utilisateur décrit son environnement :
+
+- dimensions ;
+- emplacement des plantes ;
+- éclairage ;
+- ventilation ;
+- extraction ;
+- température ;
+- humidité ;
+- capteurs ;
+- équipement ;
+- type de culture ;
+- caractéristiques des plantes.
+
+L'application utilise ensuite ces informations pour :
+
+1. représenter l'espace ;
+2. analyser les conditions ;
+3. détecter les incohérences ou problèmes ;
+4. expliquer les problèmes ;
+5. proposer des améliorations ;
+6. suivre l'évolution dans le temps ;
+7. adapter les informations au niveau de l'utilisateur.
+
+---
+
+# 2. Public cible
+
+## 2.1 Débutant
+
+L'utilisateur ne connaît pas nécessairement :
+
+- les unités techniques ;
+- les paramètres environnementaux ;
+- les besoins des plantes ;
+- le fonctionnement de l'éclairage ;
+- la ventilation.
+
+L'application doit donc expliquer les notions au lieu de simplement afficher des chiffres.
+
+Exemple :
+
+> ⚠️ L'humidité est actuellement élevée.
+
+Puis :
+
+> **Pourquoi ?**  
+> Un environnement trop humide peut favoriser certains problèmes. Surveille son évolution et vérifie la circulation de l'air.
+
+---
+
+## 2.2 Utilisateur intermédiaire
+
+L'utilisateur connaît les bases et souhaite :
+
+- optimiser son installation ;
+- comparer différentes configurations ;
+- suivre ses plantes ;
+- utiliser davantage de données.
+
+---
+
+## 2.3 Expert
+
+L'utilisateur doit pouvoir accéder aux données détaillées :
+
+- historiques ;
+- graphiques ;
+- paramètres avancés ;
+- mesures de capteurs ;
+- seuils personnalisés ;
+- automatisation ;
+- comparaison de zones ;
+- export de données ;
+- API/intégrations éventuelles.
+
+---
+
+# 3. Fonction principale : création de l'environnement
+
+Lors de la première utilisation, l'application guide l'utilisateur étape par étape.
+
+## Informations générales
+
+- nom de l'environnement ;
+- type d'espace ;
+- dimensions ;
+- unités utilisées ;
+- hauteur disponible ;
+- nombre de zones ;
+- emplacement des ouvertures ;
+- conditions particulières.
+
+### Unités
+
+Support minimal :
+
+- métrique ;
+- impérial.
+
+Exemples :
+
+- mètres / pieds ;
+- centimètres / pouces ;
+- litres / gallons.
+
+---
+
+# 4. Représentation numérique de l'espace
+
+L'application doit générer une représentation 2D et éventuellement 3D.
+
+## Vue 2D
+
+Vue de dessus permettant de visualiser :
+
+- murs ;
+- portes ;
+- fenêtres ;
+- plantes ;
+- pots ;
+- lampes ;
+- ventilateurs ;
+- extraction ;
+- capteurs.
+
+## Vue 3D
+
+La vue 3D représente :
+
+- volume réel ;
+- hauteur des équipements ;
+- position des plantes ;
+- hauteur des lampes ;
+- circulation de l'air ;
+- zones lumineuses.
+
+La représentation doit respecter les dimensions renseignées par l'utilisateur.
+
+**Principe important : l'application ne doit pas inventer une structure qui n'a pas été renseignée ou détectée.**
+
+---
+
+# 5. Gestion des zones
+
+Un environnement peut être divisé en plusieurs zones.
+
+Exemple :
+
+**Pièce principale**
+
+- Zone A — croissance
+- Zone B — développement
+- Zone C — expérimentation
+
+Chaque zone possède ses propres :
+
+- dimensions ;
+- plantes ;
+- éclairage ;
+- ventilation ;
+- capteurs ;
+- paramètres ;
+- historique.
+
+---
+
+# 6. Gestion des plantes
+
+Chaque plante ou groupe de plantes possède une fiche.
+
+## Informations
+
+- nom ;
+- espèce ;
+- variété ;
+- nombre ;
+- emplacement ;
+- date d'installation ;
+- stade de développement ;
+- contenant ;
+- substrat ;
+- méthode de culture.
+
+## Besoins
+
+L'application associe ensuite des paramètres de référence :
+
+- lumière ;
+- température ;
+- humidité ;
+- ventilation ;
+- durée d'éclairage ;
+- autres paramètres pertinents selon la culture.
+
+Ces références doivent provenir d'une **base de connaissances contrôlée**, et non être générées arbitrairement par l'IA.
+
+---
+
+# 7. Système d'éclairage
+
+L'utilisateur peut ajouter une ou plusieurs sources lumineuses.
+
+## Données
+
+- fabricant ;
+- modèle ;
+- type ;
+- puissance ;
+- nombre ;
+- hauteur ;
+- position ;
+- surface annoncée ;
+- durée d'utilisation ;
+- spectre si disponible ;
+- données techniques disponibles.
+
+## Mesures
+
+Lorsque des données fiables sont disponibles :
+
+- intensité lumineuse ;
+- PPFD ;
+- DLI ;
+- distribution spatiale.
+
+L'utilisateur peut également entrer manuellement les mesures provenant d'un appareil externe.
+
+---
+
+# 8. Carte lumineuse
+
+L'application calcule une représentation de la distribution lumineuse.
+
+Exemple :
+
+```text id="l2zhal"
+┌───────────────────────────┐
+│ 🟢 🟢 🟢 🟡 🟡            │
+│ 🟢 🟢 🟢 🟢 🟡            │
+│ 🟢 🟢 🟢 🟢 🟢            │
+│ 🟡 🟢 🟢 🟢 🟡            │
+│ 🔴 🟡 🟢 🟡 🔴            │
+└───────────────────────────┘
+```
+
+L'utilisateur peut voir immédiatement les zones :
+
+- insuffisantes ;
+- acceptables ;
+- optimales ;
+- excessives, lorsque pertinent.
+
+---
+
+# 9. Gestion de la ventilation
+
+Chaque ventilateur possède une fiche.
+
+## Informations
+
+- type ;
+- fabricant ;
+- modèle ;
+- diamètre ;
+- débit d'air ;
+- vitesse ;
+- position ;
+- orientation ;
+- hauteur.
+
+L'utilisateur peut définir :
+
+- entrée d'air ;
+- sortie d'air ;
+- extraction ;
+- circulation interne.
+
+---
+
+# 10. Simulation de circulation de l'air
+
+La vue 2D/3D peut afficher des flux simplifiés.
+
+Exemple :
+
+```text id="0k9rma"
+Entrée → → → → → Ventilateur
+                    ↓
+                    ↓
+                Zone plantes
+                    ↓
+                    ↓
+                 Extraction
+```
+
+L'application identifie notamment :
+
+- zones peu ventilées ;
+- zones potentiellement problématiques ;
+- mauvais positionnement évident ;
+- différences entre zones.
+
+**Important :** la première version doit présenter ces résultats comme des estimations lorsque l'application ne possède pas suffisamment de données physiques pour effectuer une simulation réelle.
+
+---
+
+# 11. Température et humidité
+
+Les données peuvent être :
+
+### Manuelles
+
+L'utilisateur saisit :
+
+- température ;
+- humidité ;
+- date/heure.
+
+### Automatiques
+
+Connexion possible à des capteurs compatibles.
+
+L'application conserve :
+
+- valeur actuelle ;
+- minimum ;
+- maximum ;
+- moyenne ;
+- historique.
+
+---
+
+# 12. Historique
+
+Chaque paramètre est enregistré dans le temps.
+
+Exemple :
+
+```text id="agwx20"
+Température
+24 h
+
+26°C ┤       ╭─╮
+24°C ┤ ─────╯  ╰──
+22°C ┤
+     └──────────────
+       06  12  18  24
+```
+
+Même principe pour :
+
+- humidité ;
+- lumière ;
+- paramètres du substrat ;
+- autres capteurs compatibles.
+
+---
+
+# 13. Tableau de bord
+
+L'écran principal doit donner une vision immédiate de l'état de l'environnement.
+
+Exemple :
+
+```text id="r7zgpo"
+MON ENVIRONNEMENT
+
+🌡 Température       24,2 °C     ✓
+💧 Humidité           58 %       ✓
+💡 Lumière            Bonne      ✓
+🌬 Ventilation        Moyenne    ⚠
+📐 Espace             Bon         ✓
+
+État général
+████████░░ 87 %
+
+2 recommandations
+1 élément à surveiller
+```
+
+Le score général ne doit pas être présenté comme une vérité scientifique absolue. Il s'agit d'un **indicateur synthétique** basé sur les données disponibles.
+
+---
+
+# 14. Moteur de diagnostic
+
+C'est le cœur de l'application.
+
+Le moteur compare :
+
+**Conditions réelles**
+
+avec
+
+**Besoins de la culture**
+
+et
+
+**Caractéristiques de l'environnement.**
+
+Il produit :
+
+- anomalies ;
+- alertes ;
+- recommandations ;
+- explications ;
+- niveau de priorité.
+
+## Priorités
+
+### 🔴 Critique
+
+Action à envisager rapidement.
+
+### 🟠 Important
+
+Problème nécessitant une surveillance ou une correction.
+
+### 🟡 Optimisation
+
+Amélioration possible mais non urgente.
+
+### 🟢 Conforme
+
+Paramètre satisfaisant.
+
+---
+
+# 15. Système de recommandations
+
+Chaque recommandation doit répondre à quatre questions :
+
+### Quel est le problème ?
+
+> La circulation d'air est faible dans une partie de la zone.
+
+### Pourquoi ?
+
+> Le flux d'air ne couvre pas uniformément l'espace.
+
+### Que puis-je faire ?
+
+> Vérifier l'orientation du ventilateur et la circulation entre les différentes zones.
+
+### Quel est le niveau de priorité ?
+
+> 🟡 Optimisation
+
+---
+
+# 16. Assistant IA
+
+L'IA intervient comme **assistant pédagogique et analytique**, et non comme unique source de vérité.
+
+Elle peut :
+
+- expliquer les données ;
+- vulgariser les concepts ;
+- répondre aux questions ;
+- expliquer les recommandations ;
+- aider à configurer l'environnement ;
+- analyser l'historique ;
+- détecter des tendances ;
+- proposer des scénarios ;
+- aider le débutant à comprendre son installation.
+
+Exemple :
+
+> « Pourquoi mon humidité augmente-t-elle chaque soir ? »
+
+L'IA analyse l'historique disponible et répond à partir des données réellement enregistrées.
+
+---
+
+# 17. Fonction « Et si... ? »
+
+Fonction majeure de l'application.
+
+L'utilisateur peut créer une simulation.
+
+### Exemple
+
+> Ajouter un ventilateur.
+
+L'application affiche :
+
+**Configuration actuelle**
+
+→ circulation moyenne
+
+**Configuration simulée**
+
+→ circulation estimée améliorée
+
+Autres simulations :
+
+- déplacer une lampe ;
+- ajouter une lampe ;
+- modifier la hauteur d'une lampe ;
+- déplacer un ventilateur ;
+- modifier le nombre de plantes ;
+- changer la disposition ;
+- modifier la durée d'éclairage.
+
+Les résultats doivent être clairement identifiés comme **simulations/estimations** lorsqu'ils ne proviennent pas d'une mesure réelle.
+
+---
+
+# 18. Importation par photo
+
+L'utilisateur peut photographier son espace.
+
+L'IA peut essayer d'identifier :
+
+- lampes ;
+- ventilateurs ;
+- pots ;
+- plantes ;
+- fenêtres ;
+- portes ;
+- équipements.
+
+Mais chaque élément détecté doit pouvoir être confirmé.
+
+Exemple :
+
+> J'ai détecté 2 ventilateurs.
+
+**✓ Confirmer**
+
+**✎ Modifier**
+
+**× Supprimer**
+
+L'IA ne doit jamais considérer une détection visuelle incertaine comme une donnée certaine.
+
+---
+
+# 19. Configuration guidée
+
+Pour éviter de décourager les débutants :
+
+### Étape 1
+Créer l'espace.
+
+### Étape 2
+Ajouter les dimensions.
+
+### Étape 3
+Ajouter les plantes.
+
+### Étape 4
+Ajouter l'éclairage.
+
+### Étape 5
+Ajouter la ventilation.
+
+### Étape 6
+Ajouter les capteurs.
+
+### Étape 7
+Analyser.
+
+### Étape 8
+Recevoir les recommandations.
+
+L'utilisateur peut ignorer les données avancées et les compléter plus tard.
+
+---
+
+# 20. Système de connaissances
+
+L'application doit posséder une base structurée contenant les informations de référence.
+
+Structure conceptuelle :
+
+```text id="ckyum0"
+PLANTE
+│
+├── besoins lumineux
+├── température
+├── humidité
+├── ventilation
+├── cycle
+├── stade
+└── paramètres spécifiques
+```
+
+La base doit pouvoir être mise à jour indépendamment de l'application.
+
+Elle doit également distinguer :
+
+- données scientifiques ;
+- recommandations générales ;
+- données fabricant ;
+- estimations ;
+- préférences utilisateur.
+
+---
+
+# 21. Gestion de l'incertitude
+
+Fonction essentielle.
+
+Chaque donnée peut avoir un niveau de confiance.
+
+Exemple :
+
+```text id="0svsp5"
+Température
+24,2 °C
+Source : capteur
+Confiance : élevée
+
+Puissance lampe
+100 W
+Source : utilisateur
+Confiance : moyenne
+
+Couverture lumineuse
+3 × 3 m
+Source : estimation
+Confiance : faible
+```
+
+Cela permet d'éviter de donner une fausse impression de précision.
+
+---
+
+# 22. Notifications
+
+L'application peut envoyer des alertes lorsque :
+
+- température hors seuil ;
+- humidité hors seuil ;
+- capteur déconnecté ;
+- donnée inhabituelle ;
+- changement important ;
+- équipement indisponible ;
+- tendance préoccupante.
+
+L'utilisateur peut choisir les notifications.
+
+---
+
+# 23. Journal de culture
+
+L'utilisateur peut enregistrer :
+
+- observations ;
+- photos ;
+- interventions ;
+- changements d'équipement ;
+- arrosage ;
+- rempotage ;
+- événements importants ;
+- notes personnelles.
+
+Chaque événement est associé à une date.
+
+Cela permet de comparer :
+
+**ce qui a été fait**
+
+avec
+
+**ce qui s'est produit ensuite.**
+
+---
+
+# 24. Comparaison historique
+
+L'application doit permettre de répondre à des questions comme :
+
+> « Qu'est-ce qui a changé depuis la semaine dernière ? »
+
+ou :
+
+> « Quelle configuration avait les meilleures conditions ? »
+
+L'utilisateur peut comparer plusieurs périodes.
+
+---
+
+# 25. Profils utilisateur
+
+Un utilisateur possède :
+
+- son niveau ;
+- ses unités ;
+- ses préférences d'affichage ;
+- ses environnements ;
+- ses cultures ;
+- ses équipements ;
+- ses capteurs.
+
+---
+
+# 26. Architecture fonctionnelle
+
+```text id="g60icf"
+                    APPLICATION
+                         │
+        ┌────────────────┼────────────────┐
+        │                │                │
+   ENVIRONNEMENT     CULTURES         CAPTEURS
+        │                │                │
+        └────────────────┼────────────────┘
+                         │
+                    BASE DE DONNÉES
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+       MOTEUR DE DIAGNOSTIC     HISTORIQUE
+              │
+              ▼
+        MOTEUR DE RÈGLES
+              │
+              ▼
+          IA ASSISTANT
+              │
+              ▼
+       RECOMMANDATIONS
+```
+
+---
+
+# 27. Modèle de données simplifié
+
+Exemple conceptuel :
+
+```json id="f7h7a0"
+{
+  "environment": {
+    "name": "Ma culture",
+    "dimensions": {
+      "width": 2.4,
+      "depth": 1.8,
+      "height": 2.2,
+      "unit": "m"
+    }
+  },
+
+  "zones": [],
+
+  "plants": [],
+
+  "lighting": [],
+
+  "ventilation": [],
+
+  "sensors": [],
+
+  "measurements": [],
+
+  "events": [],
+
+  "diagnostics": []
+}
+```
+
+Le modèle devra ensuite être normalisé davantage pour permettre plusieurs environnements, zones, équipements et historiques.
+
+---
+
+# 28. Sécurité et confidentialité
+
+Les données de l'utilisateur doivent être protégées.
+
+L'application doit notamment prévoir :
+
+- authentification ;
+- chiffrement des données sensibles ;
+- contrôle des accès ;
+- sauvegarde ;
+- suppression des données ;
+- export des données utilisateur.
+
+Les données provenant de capteurs ou d'appareils connectés doivent également être protégées.
+
+---
+
+# 29. MVP — Première version
+
+Il ne faut pas développer tout le projet immédiatement.
+
+La première version devrait contenir :
+
+### Obligatoire
+
+- création d'un environnement ;
+- dimensions ;
+- zones ;
+- ajout des plantes ;
+- ajout de lampes ;
+- ajout de ventilateurs ;
+- température ;
+- humidité ;
+- représentation 2D ;
+- tableau de bord ;
+- règles de diagnostic ;
+- recommandations débutant ;
+- historique simple.
+
+### À repousser
+
+- véritable simulation 3D physique ;
+- reconnaissance automatique complète par caméra ;
+- intégrations de nombreux fabricants ;
+- automatisation ;
+- simulation avancée des flux d'air ;
+- IA prédictive ;
+- API publique.
+
+---
+
+# 30. Version 2
+
+Ajouter :
+
+- vue 3D ;
+- capteurs connectés ;
+- graphiques avancés ;
+- reconnaissance photo ;
+- recommandations personnalisées ;
+- mode expert ;
+- simulations « Et si... ? » ;
+- journal de culture ;
+- comparaison historique.
+
+---
+
+# 31. Version 3
+
+Ajouter :
+
+- automatisation ;
+- intégrations IoT ;
+- modèles prédictifs ;
+- optimisation automatique ;
+- API ;
+- partage d'environnements ;
+- communauté ;
+- bibliothèque de configurations ;
+- recommandations basées sur des données historiques.
+
+---
+
+# 32. Principe UX fondamental
+
+L'application doit respecter cette règle :
+
+> **La complexité doit être disponible, mais jamais imposée.**
+
+Un débutant doit pouvoir utiliser l'application sans comprendre les termes techniques.
+
+Un expert doit pouvoir accéder aux données détaillées sans être limité par une interface simplifiée.
+
+---
+
+# 33. Résultat attendu
+
+À terme, l'application doit devenir une sorte de :
+
+**« tableau de bord intelligent de l'environnement de culture »**
+
+qui combine :
+
+**Modélisation**
++
+**Mesures**
++
+**Historique**
++
+**Diagnostic**
++
+**Simulation**
++
+**Conseils**
++
+**IA**
+
+L'objectif n'est pas seulement de dire à l'utilisateur **« voici tes données »**, mais de lui permettre de comprendre :
+
+> **« Voici ce qui se passe, voici pourquoi, voici ce que tu peux modifier et voici ce qui pourrait se produire si tu le modifies. »**
+:::
+
+La prochaine étape logique serait de transformer ce cahier des charges en **architecture concrète de l'application** : les écrans un par un, la navigation, les boutons, les formulaires, puis le schéma complet de la base de données et les calculs du moteur de diagnostic.
