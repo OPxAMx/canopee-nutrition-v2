@@ -158,6 +158,15 @@ type AssistantMessage = {
 
 type SearchMode = "all" | "range" | "product";
 
+const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+function getAppPath() {
+  const pathname = window.location.pathname;
+  return appBasePath && (pathname === appBasePath || pathname.startsWith(`${appBasePath}/`))
+    ? pathname.slice(appBasePath.length) || "/"
+    : pathname;
+}
+
 const WEEK_LABELS = [
   "Veg 1",
   "Veg 2",
@@ -930,7 +939,7 @@ function getWeekPhaseLabel(phase: WeekPhase) {
 }
 
 export default function Home() {
-  const [location, setLocation] = useState(() => typeof window === "undefined" ? "/" : window.location.pathname);
+  const [location, setLocation] = useState(() => typeof window === "undefined" ? "/" : getAppPath());
   const [preferences, setPreferences] = useState<UserPreferences>(savedPreferences);
   const [navigationCollapsed, setNavigationCollapsed] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("canopee-nutrition-v2-navigation-collapsed") === "true");
   const [libraryCollapsed, setLibraryCollapsed] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("canopee-nutrition-v2-library-collapsed") === "true");
@@ -1022,7 +1031,8 @@ export default function Home() {
       ? libraryCollapsed ? "lg:grid-cols-[76px_minmax(0,1fr)_76px]" : "lg:grid-cols-[76px_minmax(0,1fr)_340px]"
       : libraryCollapsed ? "lg:grid-cols-[240px_minmax(0,1fr)_76px]" : "lg:grid-cols-[240px_minmax(0,1fr)_340px]";
   function navigateTo(path: string) {
-    if (window.location.pathname !== path) window.history.pushState({}, "", path);
+    const browserPath = `${appBasePath}${path}`;
+    if (window.location.pathname !== browserPath) window.history.pushState({}, "", browserPath);
     setLocation(path);
     setMobileCatalog(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1125,7 +1135,7 @@ export default function Home() {
     let cancelled = false;
     setWikiKnowledgeLoading(true);
     setWikiKnowledgeError("");
-    fetch("/api/wiki-sources")
+    fetch(`${import.meta.env.BASE_URL}knowledge/index.json`)
       .then(async (response) => {
         const payload: unknown = await response.json();
         if (!response.ok) {
@@ -1158,7 +1168,7 @@ export default function Home() {
     setWikiKnowledgeContent("");
     setWikiKnowledgeContentError("");
     setWikiKnowledgeContentLoading(true);
-    const sourceUrl = `/knowledge/${encodeURIComponent(source.filename)}`;
+    const sourceUrl = `${import.meta.env.BASE_URL}knowledge/${encodeURIComponent(source.filename)}`;
     fetch(sourceUrl, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`Le document « ${source.title} » est inaccessible (HTTP ${response.status}).`);
@@ -1175,7 +1185,7 @@ export default function Home() {
   }, [selectedWikiKnowledgeSource]);
 
   useEffect(() => {
-    const handlePopState = () => setLocation(window.location.pathname);
+    const handlePopState = () => setLocation(getAppPath());
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);

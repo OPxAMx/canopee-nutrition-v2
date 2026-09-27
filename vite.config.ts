@@ -289,6 +289,14 @@ function vitePluginBotanyAssistant(): Plugin {
 function vitePluginWikiKnowledge(): Plugin {
   return {
     name: "wiki-knowledge-index",
+    generateBundle() {
+      const directory = path.join(PROJECT_ROOT, "client", "public", "knowledge");
+      const sources = fs.readdirSync(directory).flatMap((filename) => {
+        const source = createWikiKnowledgeSource(filename);
+        return source ? [source] : [];
+      }).sort((first, second) => first.title.localeCompare(second.title, "fr"));
+      this.emitFile({ type: "asset", fileName: "knowledge/index.json", source: JSON.stringify(sources) });
+    },
     configureServer(server: ViteDevServer) {
       server.middlewares.use("/api/wiki-sources", (req, res, next) => {
         if (req.method !== "GET") return next();
@@ -317,6 +325,7 @@ export default defineConfig(({ mode }) => {
     if (process.env[key] === undefined && assistantEnv[key] !== undefined) process.env[key] = assistantEnv[key];
   }
   return {
+    base: process.env.VITE_BASE_PATH ?? "/",
     plugins,
     resolve: {
       alias: {
