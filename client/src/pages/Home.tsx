@@ -43,6 +43,7 @@ import { isWikiKnowledgeSources, type WikiKnowledgeSource } from "@shared/wiki-k
 import { PRODUCT_DESCRIPTIONS } from "@shared/product-descriptions";
 import { MAX_DIAGNOSTIC_IMAGE_DATA_URL_LENGTH } from "@shared/botany-assistant";
 import type { ManufacturerProductCandidate, ManufacturerSearchResult } from "@shared/manufacturer-search";
+import { buildSmartIndicators } from "@/lib/smart-indicators";
 
 type Product = {
   id: string;
@@ -61,6 +62,14 @@ type Product = {
   doseVerified?: boolean;
   application?: string;
   nutrientProfile?: string;
+  retailPrices?: {
+    packageQuantity: string;
+    packageVolumeLiters: number;
+    priceCad: number;
+    retailer: string;
+    sourceUrl: string;
+    checkedAt: string;
+  }[];
 };
 
 type TableProduct = Product & { doses: number[]; enabled: boolean };
@@ -84,9 +93,63 @@ type NutritionTable = {
   custom?: boolean;
 };
 
+type OfficialScheduleReference = {
+  brand: string;
+  title: string;
+  url: string;
+  context: string;
+  mediumVerified: boolean;
+};
+
+const OFFICIAL_SCHEDULE_REFERENCES: OfficialScheduleReference[] = [
+  {
+    brand: "FoxFarm",
+    title: "Soil Feeding Schedule",
+    url: "https://foxfarm.com/download/13115/",
+    context: "Programme terre · PDF du 11 février 2022",
+    mediumVerified: true,
+  },
+  {
+    brand: "FoxFarm",
+    title: "Cultivation Nation 3-Part Soil Feeding Schedule",
+    url: "https://foxfarm.com/download/22684/",
+    context: "Programme terre · PDF du 11 février 2022",
+    mediumVerified: true,
+  },
+  {
+    brand: "General Hydroponics",
+    title: "FloraSeries Basic Feed Charts",
+    url: "https://generalhydroponics.com/cdn/shop/files/FloraSeries-Basic-Feed-Charts.pdf?v=7055597206226638945",
+    context: "PDF · mL/gal, EC et PPM · substrat terre non confirmé",
+    mediumVerified: false,
+  },
+  {
+    brand: "House & Garden",
+    title: "Tableau officiel · 8 semaines",
+    url: "https://house-garden.us/wp-content/uploads/2025/07/HG-8-Week-Feed-Chart-Only.pdf",
+    context: "PDF modifié en juillet 2025 · substrat non confirmé",
+    mediumVerified: false,
+  },
+  {
+    brand: "House & Garden",
+    title: "Tableau officiel · 10 semaines",
+    url: "https://house-garden.us/wp-content/uploads/2025/07/HG-10-Week-Chart-Only.pdf",
+    context: "PDF modifié en juillet 2025 · substrat non confirmé",
+    mediumVerified: false,
+  },
+  {
+    brand: "Botanicare",
+    title: "Pure Blend Pro Grow & Bloom Feed Chart",
+    url: "https://www.botanicare.com/wp-content/uploads/Botanicare_PureBlendProGrowBloomFeedChart_250428ae.pdf",
+    context: "PDF du 28 avril 2025 · mL/gal · substrat terre non confirmé",
+    mediumVerified: false,
+  },
+];
+
 type WateringRecord = {
   id: string;
   createdAt: string;
+  tableId?: string;
   tableName: string;
   week: string;
   liters: number;
@@ -218,6 +281,24 @@ const CATALOG: Product[] = ([
   { id: "an-bud-ignitor", name: "Bud Ignitor", brand: "Advanced Nutrients", range: "Advanced Nutrients · pH Perfect", role: "Début de floraison", unit: "ml", color: "#d0a27a", description: "Dosages par semaine vérifiés dans le tableau Sensi Master Recipe Global." },
   { id: "an-overdrive", name: "Overdrive", brand: "Advanced Nutrients", range: "Advanced Nutrients · pH Perfect", role: "Maturation", unit: "ml", color: "#bf8768", description: "Dosages par semaine vérifiés dans le tableau Sensi Master Recipe Global." },
   { id: "an-flawless-finish", name: "Flawless Finish", brand: "Advanced Nutrients", range: "Advanced Nutrients · pH Perfect", role: "Rinçage", unit: "ml", color: "#84a0aa", description: "Inclusion et dose de rinçage vérifiées dans le tableau Sensi Master Recipe Global." },
+  {
+    id: "an-sensi-calmag-xtra",
+    name: "Sensi Cal-Mag Xtra",
+    brand: "Advanced Nutrients",
+    range: "Advanced Nutrients · compléments",
+    role: "Calcium / magnésium",
+    unit: "ml",
+    color: "#7aa5a7",
+    description: "Complément de calcium et magnésium; profil 4-0-0 indiqué sur la fiche du détaillant canadien. Suivre l’étiquette correspondant au format acheté.",
+    sourceUrl: "https://www.advancednutrients.com/products/",
+    sourceVerified: true,
+    nutrientProfile: "4-0-0 (indiqué par le détaillant; vérifier l’étiquette locale)",
+    retailPrices: [
+      { packageQuantity: "1 L", packageVolumeLiters: 1, priceCad: 24.99, retailer: "Urban Grow Garden Supply", sourceUrl: "https://urban-grow.ca/products/advanced-nutrients-sensi-cal-mag-xtra-1", checkedAt: "2026-09-30" },
+      { packageQuantity: "4 L", packageVolumeLiters: 4, priceCad: 74.99, retailer: "Urban Grow Garden Supply", sourceUrl: "https://urban-grow.ca/products/advanced-nutrients-sensi-cal-mag-xtra-1", checkedAt: "2026-09-30" },
+      { packageQuantity: "10 L", packageVolumeLiters: 10, priceCad: 144.99, retailer: "Urban Grow Garden Supply", sourceUrl: "https://urban-grow.ca/products/advanced-nutrients-sensi-cal-mag-xtra-1", checkedAt: "2026-09-30" },
+    ],
+  },
   { id: "custom-calmag", name: "CalMag", brand: "Générique", range: "Compléments", role: "Calcium / magnésium", unit: "ml", color: "#7aa5a7", description: "Complément calcium et magnésium pour eau douce ou osmosée." },
 ] satisfies Product[]).map((product) => ({
   ...product,
@@ -292,7 +373,7 @@ const OFFICIAL_CHARTS: Record<string, OfficialChartDefinition> = {
 };
 
 function officialDosesFor(table: NutritionTable, productId: string): number[] | undefined {
-  if (!table.chartId) return undefined;
+  if (!table.chartId || !table.chartSourceUrl) return undefined;
   const chart = OFFICIAL_CHARTS[table.chartId];
   const stageDoses = chart?.doses[productId];
   if (!chart || !stageDoses) return undefined;
@@ -341,6 +422,7 @@ const DEFAULT_TABLES: NutritionTable[] = [
     weekPhases: ["other", "vegetative", "flowering", "flowering", "flowering", "flowering", "flowering", "flowering", "flowering", "flowering", "other", "flush"],
     chartId: "canna-coco-2026",
     chartSourceUrl: "https://www.cannagardening.com/growguide",
+    manufacturerPageUrl: "https://www.canna.ca/products",
     chartNotes: "Source CANNA COCO v26.06 : doses publiées en mL/US gal puis converties en ml/L. Seules les doses fixes sont préremplies; doses conditionnelles ou en fourchette omises.",
     chartStageKeys: CANNA_STAGES,
     products: CATALOG.filter((product) => ["canna-a", "canna-b", "canna-rhizo", "canna-pk"].includes(product.id)).map((product) => ({
@@ -358,7 +440,7 @@ const DEFAULT_TABLES: NutritionTable[] = [
     weeks: ADVANCED_NUTRIENTS_STAGES,
     weekPhases: ["vegetative", "vegetative", "vegetative", "vegetative", "flowering", "flowering", "flowering", "flowering", "flowering", "flowering", "flowering", "flush"],
     chartId: "advanced-sensi-global",
-    chartSourceUrl: "https://www.advancednutrients.com/feeding/",
+    chartSourceUrl: "https://www.advancednutrients.com/nutrient-calculator/",
     chartNotes: "Sensi Master Recipe Global, doses en ml/L. Le tableau ne précise pas le substrat. Flush W8 inclut Flawless Finish à 2 ml/L.",
     chartStageKeys: ADVANCED_NUTRIENTS_STAGES,
     products: CATALOG.filter((product) => OFFICIAL_CHARTS["advanced-sensi-global"].doses[product.id] !== undefined).map((product) => ({
@@ -699,6 +781,17 @@ function savedJournalEntries(): CultureJournalEntry[] {
   }
 }
 
+function isRetailPrice(value: unknown): value is NonNullable<Product["retailPrices"]>[number] {
+  if (!value || typeof value !== "object") return false;
+  const price = value as Partial<NonNullable<Product["retailPrices"]>[number]>;
+  return typeof price.packageQuantity === "string" && price.packageQuantity.length > 0
+    && typeof price.packageVolumeLiters === "number" && Number.isFinite(price.packageVolumeLiters) && price.packageVolumeLiters > 0
+    && typeof price.priceCad === "number" && Number.isFinite(price.priceCad) && price.priceCad >= 0
+    && typeof price.retailer === "string" && price.retailer.length > 0
+    && typeof price.sourceUrl === "string" && isValidHttpUrl(price.sourceUrl)
+    && typeof price.checkedAt === "string" && Number.isFinite(Date.parse(price.checkedAt));
+}
+
 function isWateringRecord(value: unknown): value is WateringRecord {
   if (!value || typeof value !== "object") return false;
   const record = value as Partial<WateringRecord>;
@@ -849,6 +942,7 @@ function isNutritionTable(value: unknown): value is NutritionTable {
       && typeof product.description === "string" && typeof product.enabled === "boolean"
       && isValidHttpUrl(product.sourceUrl) && isValidHttpUrl(product.doseSourceUrl)
       && (product.imageUrl === undefined || (typeof product.imageUrl === "string" && isValidImageReference(product.imageUrl)))
+      && (product.retailPrices === undefined || (Array.isArray(product.retailPrices) && product.retailPrices.every(isRetailPrice)))
       && (product.sourceVerified === undefined || typeof product.sourceVerified === "boolean")
       && (product.doseVerified === undefined || typeof product.doseVerified === "boolean")
       && Array.isArray(product.doses) && product.doses.length === candidate.weeks?.length
@@ -931,7 +1025,17 @@ function isManufacturerSearchResult(value: unknown): value is ManufacturerSearch
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<ManufacturerSearchResult>;
   return typeof candidate.query === "string" && typeof candidate.searchedAt === "string"
-    && Array.isArray(candidate.products) && Array.isArray(candidate.unavailableSources);
+    && Array.isArray(candidate.products) && candidate.products.every((product) =>
+      Boolean(product && typeof product.id === "string"
+        && (product.kind === "product" || product.kind === "range")
+        && typeof product.name === "string" && typeof product.brand === "string"
+        && typeof product.sourceUrl === "string" && isValidHttpUrl(product.sourceUrl)
+        && typeof product.description === "string"
+        && (product.packageQuantity === null || typeof product.packageQuantity === "string")
+        && (product.imageUrl === undefined || (typeof product.imageUrl === "string" && isValidImageReference(product.imageUrl)))
+        && product.sourceVerified === true))
+    && Array.isArray(candidate.unavailableSources) && candidate.unavailableSources.every((source) =>
+      Boolean(source && typeof source.brand === "string" && typeof source.message === "string"));
 }
 
 function normalizeProductName(value: string) {
@@ -1074,6 +1178,15 @@ export default function Home() {
   const week = table.weeks[Math.min(weekIndex, table.weeks.length - 1)] ?? "Semaine 1";
   const currentProducts = table.products.filter((product) => product.enabled);
   const currentDose = (product: TableProduct) => product.doses[Math.min(weekIndex, product.doses.length - 1)] ?? 0;
+  const smartIndicators = useMemo(
+    () => buildSmartIndicators(table, weekIndex, liters),
+    [table, weekIndex, liters],
+  );
+  const lastMatchingWatering = useMemo(() => waterings
+    .filter((record) => record.week === week
+      && (record.tableId ? record.tableId === table.id : record.tableName === table.name))
+    .sort((first, second) => Date.parse(second.createdAt) - Date.parse(first.createdAt))[0],
+  [waterings, table.id, table.name, week]);
   const totalMlPerLiter = currentProducts.filter((product) => product.unit === "ml").reduce((sum, product) => sum + currentDose(product), 0);
   const totalGramsPerLiter = currentProducts.filter((product) => product.unit === "g").reduce((sum, product) => sum + currentDose(product), 0);
   const calendarTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -1134,7 +1247,15 @@ export default function Home() {
       return [];
     };
     const searchedCategories = categoriesFromSearch(term);
-    return CATALOG.filter((product) => {
+    const enrichedCatalog = CATALOG.map((product) => {
+      const savedProduct = tables.flatMap((item) => item.products).find((item) => item.id === product.id);
+      return {
+        ...product,
+        imageUrl: product.imageUrl ?? savedProduct?.imageUrl,
+        packageQuantity: product.packageQuantity ?? savedProduct?.packageQuantity,
+      };
+    });
+    return enrichedCatalog.filter((product) => {
       const categories = getProductCategories(product);
       if (productCategory !== "all" && !categories.includes(productCategory)) return false;
       if (!term) return true;
@@ -1143,7 +1264,7 @@ export default function Home() {
       if (searchMode === "product") return matches(product.name);
       return [product.name, product.brand, product.range, product.role, ...categories.map((category) => PRODUCT_CATEGORY_LABELS[category])].some(matches);
     });
-  }, [search, searchMode, productCategory]);
+  }, [search, searchMode, productCategory, tables]);
 
   useEffect(() => {
     window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
@@ -1631,6 +1752,7 @@ export default function Home() {
       ...knownProduct,
       sourceUrl: candidate.sourceUrl,
       packageQuantity: candidate.packageQuantity ?? undefined,
+      imageUrl: candidate.imageUrl ?? knownProduct.imageUrl,
       sourceVerified: true,
       doseSourceUrl: doses ? table.chartSourceUrl : undefined,
       doseVerified: Boolean(doses),
@@ -1645,6 +1767,7 @@ export default function Home() {
       description: candidate.description || "Description non publiée dans la fiche officielle consultée.",
       sourceUrl: candidate.sourceUrl,
       packageQuantity: candidate.packageQuantity ?? undefined,
+      imageUrl: candidate.imageUrl,
       sourceVerified: true,
       doseVerified: false,
     };
@@ -1667,7 +1790,7 @@ export default function Home() {
       return;
     }
     const doses = officialDosesFor(table, product.id) ?? table.weeks.map(() => 0);
-    const chartVerified = Boolean(table.chartId && OFFICIAL_CHARTS[table.chartId]?.doses[product.id]);
+    const chartVerified = Boolean(table.chartSourceUrl && table.chartId && OFFICIAL_CHARTS[table.chartId]?.doses[product.id]);
     updateTableProducts([...table.products, {
       ...product,
       doses,
@@ -2068,6 +2191,7 @@ export default function Home() {
     const record: WateringRecord = {
       id: `watering-${Date.now()}`,
       createdAt: new Date().toISOString(),
+      tableId: table.id,
       tableName: table.name,
       week,
       liters,
@@ -2187,7 +2311,7 @@ export default function Home() {
           {activePage === "nutrition" && <>
           <div className="mb-6 flex items-start justify-between gap-4">
             <div>
-              <div className="mb-3 flex flex-wrap items-center gap-2"><Badge className="border border-primary/20 bg-primary/10 text-primary">{table.custom ? "Table personnelle" : "Table recommandée"}</Badge>{table.brandImageUrl && <img src={table.brandImageUrl} alt={`Logo ${table.brand}`} className="size-7 rounded-lg border border-border/70 bg-white object-contain p-0.5" /> }<span className="text-xs text-subtle">{table.brand}</span></div>
+              <div className="mb-3 flex flex-wrap items-center gap-2"><Badge className={cn("border", table.custom ? "border-primary/20 bg-primary/10 text-primary" : table.chartSourceUrl ? "border-primary/20 bg-primary/10 text-primary" : "border-amber-500/30 bg-amber-500/10 text-amber-700")}>{table.custom ? "Table personnelle" : table.chartSourceUrl ? "Table recommandée · source liée" : "Table à vérifier · source non confirmée"}</Badge>{table.brandImageUrl && <img src={table.brandImageUrl} alt={`Logo ${table.brand}`} className="size-7 rounded-lg border border-border/70 bg-white object-contain p-0.5" /> }<span className="text-xs text-subtle">{table.brand}</span></div>
               <h1 className="font-display text-4xl leading-none tracking-tight sm:text-5xl">{table.name}</h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">{table.description}</p>
               {table.products.some((product) => product.imageUrl) && <div className="mt-4 flex flex-wrap gap-2">{table.products.filter((product) => product.imageUrl).map((product) => <div key={product.id} className="flex items-center gap-2 rounded-xl border border-border/70 bg-surface px-2 py-1.5"><img src={product.imageUrl} alt={`Image de ${product.name}`} loading="lazy" className="size-8 rounded-lg bg-white object-contain" /><span className="max-w-32 truncate text-[11px] text-muted">{product.name}</span></div>)}</div>}
@@ -2200,11 +2324,47 @@ export default function Home() {
             {tables.map((item) => <button key={item.id} type="button" onClick={() => { setSelectedTableId(item.id); setWeekIndex(0); }} className={cn("shrink-0 rounded-full px-3 py-2 text-xs", item.id === table.id ? "bg-primary text-primary-fg" : "bg-elevated text-muted")}>{item.name}</button>)}
           </div>
 
-          <section className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3" aria-live="polite">
+          <section className={cn("mb-5 rounded-2xl border px-4 py-3", table.chartSourceUrl ? "border-primary/20 bg-primary/5" : "border-amber-500/30 bg-amber-500/5")} aria-live="polite">
             <p className="text-xs font-medium text-fg">{preferences.experience === "novice" ? "Votre repère de préparation" : "Vue experte · données du cycle"}</p>
             <p className="mt-1 text-xs leading-relaxed text-muted">{preferences.experience === "novice"
               ? "Choisissez votre semaine, indiquez le volume d’eau, puis suivez les doses affichées. En cas de doute, vérifiez toujours l’étiquette du fabricant."
               : `${table.weeks.length} semaines · ${table.products.length} produits configurés · ${table.medium}. Les badges de vérification indiquent la correspondance réelle avec les sources.`}</p>
+            {!table.chartSourceUrl && <p className="mt-2 text-xs leading-relaxed text-amber-800">Aucune source fabricant vérifiée n’est associée à cette table. Les doses enregistrées restent des repères locaux et ne doivent pas être interprétées comme un tableau officiel.</p>}
+          </section>
+
+          <section aria-labelledby="smart-indicators-heading" className="mb-6 rounded-[1.6rem] border border-primary/20 bg-primary/5 p-5 sm:p-6">
+            <div className="flex items-start gap-3">
+              <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary"><Sparkles className="size-5" aria-hidden="true" /></div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 id="smart-indicators-heading" className="text-sm font-semibold">Repères Smart · {week}</h2>
+                  <Badge className="bg-primary/15 text-primary">{smartIndicators.length} produit{smartIndicators.length > 1 ? "s" : ""}</Badge>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-muted">
+                  Doses positives des produits activés dans « {table.name} ». Ce repère suit la table sélectionnée : il ne prédit ni le jour ni la fréquence d’arrosage.
+                </p>
+                {!table.chartSourceUrl && <p className="mt-2 text-[11px] leading-relaxed text-amber-800">Source fabricant non confirmée : vérifiez chaque dose avant usage; ces repères ne sont pas des recommandations officielles.</p>}
+                {lastMatchingWatering
+                  ? <p className="mt-2 text-[11px] text-subtle">Dernier arrosage enregistré pour cette semaine : {new Date(lastMatchingWatering.createdAt).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })} · {formatDose(lastMatchingWatering.liters)} L.</p>
+                  : <p className="mt-2 text-[11px] text-subtle">Aucun arrosage enregistré pour cette table et cette semaine.</p>}
+              </div>
+            </div>
+            {smartIndicators.length > 0
+              ? <ul className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {smartIndicators.map((indicator) => <li key={indicator.productId} className="flex min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-surface/80 px-3 py-2.5">
+                  <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: indicator.color }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-medium text-fg">{indicator.productName}</span>
+                    <span className="block text-[10px] text-muted">{formatDose(indicator.dosePerLiter)} {indicator.unit}/L · {formatDose(indicator.totalDose)} {indicator.unit} pour {formatDose(liters)} L</span>
+                  </span>
+                </li>)}
+              </ul>
+              : <p className="mt-4 rounded-xl border border-border/70 bg-surface/70 px-3 py-4 text-center text-xs text-muted">
+                Aucun produit activé avec une dose positive pour {week}. Consultez les doses du tableau ou choisissez une autre semaine.
+              </p>}
+            <p className="mt-3 text-[10px] leading-relaxed text-subtle">
+              Ces quantités reprennent le tableau sélectionné et ne constituent pas une consigne d’arrosage. Vérifiez l’étiquette du fabricant et adaptez tout apport aux conditions observées.
+            </p>
           </section>
 
           <section className="mb-6 overflow-hidden rounded-[1.6rem] bg-surface shadow-[var(--shadow-border)]">
@@ -2405,8 +2565,36 @@ export default function Home() {
           </div>
           <div className="rounded-2xl bg-surface p-3 shadow-[var(--shadow-border)]"><div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-subtle" /><Input aria-label="Rechercher un produit, une gamme ou une catégorie" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchManufacturerCatalog(); } }} placeholder="Produit, marque, organique, P/K…" className="h-11 border-border bg-elevated pl-9 text-sm" /></div><Label htmlFor="product-category" className="mt-3 block text-[11px] text-muted">Type de produit</Label><select id="product-category" value={productCategory} onChange={(event) => { const selected = PRODUCT_CATEGORY_FILTERS.find((category) => category.id === event.target.value); if (selected) setProductCategory(selected.id); }} className="mt-1 h-10 w-full rounded-lg border border-border bg-elevated px-3 text-xs text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{PRODUCT_CATEGORY_FILTERS.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select><div className="mt-3 flex gap-1 rounded-xl bg-elevated p-1">{([ ["all", "Tout"], ["range", "Gamme"], ["product", "Produit"] ] as [SearchMode, string][]).map(([mode, label]) => <button key={mode} type="button" onClick={() => setSearchMode(mode)} aria-pressed={searchMode === mode} className={cn("flex-1 rounded-lg py-2 text-[11px] transition", searchMode === mode ? "bg-chip text-fg" : "text-subtle hover:text-muted")}>{label}</button>)}</div><p className="mt-2 text-[10px] leading-relaxed text-subtle">« P/K » filtre les boosters associés; vérifiez le profil NPK exact sur l’étiquette.</p><Button type="button" variant="outline" className="mt-3 w-full" disabled={manufacturerSearchLoading || search.trim().length < 2} onClick={searchManufacturerCatalog}><Search className="size-4" />{manufacturerSearchLoading ? "Recherche sur les sites officiels…" : "Rechercher chez les fabricants"}</Button></div>
           <p className="mt-3 text-[11px] text-muted" aria-live="polite">{filteredCatalog.length} produit{filteredCatalog.length > 1 ? "s" : ""} dans la bibliothèque</p>
-          <div className="mt-2 space-y-2">{filteredCatalog.map((product) => { const added = table.products.some((item) => item.id === product.id); const chartDose = table.chartId ? OFFICIAL_CHARTS[table.chartId]?.doses[product.id] : undefined; const categories = getProductCategories(product); return <article key={product.id} className="group rounded-2xl border border-border/70 bg-surface p-3 transition hover:border-primary/35 hover:bg-elevated"><div className="flex items-start gap-3"><span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: product.color }} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{product.name}</p><p className="mt-0.5 truncate text-[11px] text-muted">{product.brand} · {product.role}</p></div><button type="button" onClick={() => setSelectedProductDetails(product)} aria-label={`Informations et mode d’emploi de ${product.name}`} className="grid size-8 shrink-0 place-items-center rounded-lg bg-elevated text-muted transition hover:bg-chip hover:text-fg"><Info className="size-4" /></button><button type="button" disabled={added} onClick={() => addProduct(product)} aria-label={added ? `${product.name} déjà ajouté` : `Ajouter ${product.name}`} className={cn("grid size-8 shrink-0 place-items-center rounded-lg transition", added ? "bg-chip text-primary" : "bg-elevated text-muted hover:bg-primary hover:text-primary-fg")}>{added ? <Check className="size-4" /> : <Plus className="size-4" />}</button></div><p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-subtle">{product.description}</p><div className="mt-2 flex flex-wrap items-center gap-1.5"><Badge className="bg-chip px-2 py-0.5 text-[10px] text-muted">{product.range}</Badge>{categories.slice(0, 2).map((category) => <Badge key={category} className="bg-primary/10 px-2 py-0.5 text-[10px] text-primary">{category === "pk-booster" ? "Booster PK · NPK à vérifier" : PRODUCT_CATEGORY_LABELS[category]}</Badge>)}<span className="font-mono text-[10px] text-subtle">{product.unit}</span>{chartDose && <Badge className="bg-primary/10 px-2 py-0.5 text-[10px] text-primary">Dosage fabricant vérifié</Badge>}</div></article>; })}</div>
-          {manufacturerSearchResult && <section aria-label="Résultats des sites officiels" className="mt-4 space-y-2"><div className="rounded-xl border border-primary/20 bg-primary/5 p-3"><p className="text-xs font-medium text-fg">Résultats officiels pour « {manufacturerSearchResult.query} »</p><p className="mt-1 text-[11px] leading-relaxed text-muted">Les fiches sont récupérées depuis les domaines des fabricants. Le format n’est indiqué que s’il apparaît dans les données structurées de la page; un dosage est prérempli uniquement si un tableau officiel compatible est connu.</p></div>{manufacturerSearchResult.products.map((candidate) => { const normalizedName = normalizeProductName(candidate.name); const knownProduct = CATALOG.find((product) => product.brand.toLowerCase() === candidate.brand.toLowerCase() && (normalizedName === normalizeProductName(product.name) || normalizedName.startsWith(`${normalizeProductName(product.name)} `))); const hasDoseChart = Boolean(knownProduct && officialDosesFor(table, knownProduct.id)); return <article key={candidate.id} className="rounded-2xl border border-border/70 bg-surface p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="text-sm font-medium">{candidate.name}</h3><p className="text-[11px] text-muted">{candidate.brand} · {candidate.kind === "range" ? "gamme officielle" : "produit officiel"}</p></div><Button type="button" size="sm" variant="outline" onClick={() => { setSelectedManufacturerProduct(candidate); setManufacturerProductUnit(knownProduct?.unit ?? "ml"); }}>{candidate.kind === "range" ? "Vérifier la gamme" : "Vérifier le produit"}</Button></div><p className="mt-2 text-[11px] leading-relaxed text-muted">{candidate.description || "Le fabricant ne publie pas de description dans les métadonnées de cette page."}</p>{candidate.kind === "product" && <p className="mt-2 text-[11px] text-muted">Format emballage : {candidate.packageQuantity ?? "non indiqué par la page officielle"}</p>}<p className="mt-1 text-[11px]">{hasDoseChart ? <span className="text-ok">Dosage disponible dans le tableau officiel adapté à cette recette.</span> : candidate.kind === "range" && officialChartForRange(candidate) ? <span className="text-ok">Un tableau officiel correspondant sera associé à cette gamme.</span> : <span className="text-muted">Dosage non vérifié pour cette recette; aucun dosage ne sera inventé.</span>}</p><a href={candidate.sourceUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-[11px] text-primary underline-offset-2 hover:underline">Ouvrir la fiche officielle ↗</a></article>; })}{manufacturerSearchResult.unavailableSources.map((source) => <p key={source.brand} className="rounded-lg border border-border bg-elevated p-2 text-[11px] text-muted">{source.brand} : recherche indisponible — {source.message}</p>)}</section>}
+          <details className="mt-3 rounded-xl border border-border/70 bg-surface p-3">
+            <summary className="cursor-pointer text-xs font-medium text-fg">Consulter les tableaux officiels d’autres fournisseurs</summary>
+            <div className="mt-3 space-y-2">
+              {OFFICIAL_SCHEDULE_REFERENCES.map((reference) => <article key={reference.url} className="rounded-lg bg-elevated/60 p-2.5">
+                <a href={reference.url} target="_blank" rel="noreferrer" className="text-xs font-medium text-primary underline-offset-2 hover:underline">{reference.brand} · {reference.title} ↗</a>
+                <p className="mt-1 text-[10px] leading-relaxed text-muted">{reference.context}</p>
+                {!reference.mediumVerified && <p className="mt-1 text-[10px] text-amber-800">Source officielle, mais pas validée comme programme terre; consultez le fabricant avant de choisir un support.</p>}
+              </article>)}
+              <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5 text-[10px] leading-relaxed text-muted">
+                Ces documents s’ouvrent depuis leurs sites officiels; leurs doses ne sont pas importées automatiquement, car les unités, supports et correspondances des tableaux n’ont pas tous été vérifiés pour un calculateur. Dyna-Gro et VegaMatrix : tableau officiel non confirmé. Les anciennes notes locales correspondantes ne sont pas utilisées comme sources fabricant.
+              </p>
+            </div>
+          </details>
+          {filteredCatalog.some((product) => product.retailPrices?.length) && <details className="mt-3 rounded-xl border border-border/70 bg-surface p-3">
+            <summary className="cursor-pointer text-xs font-medium text-fg">Prix observés chez un détaillant canadien</summary>
+            <div className="mt-3 space-y-3">
+              {filteredCatalog.filter((product) => product.retailPrices?.length).map((product) => <div key={product.id}>
+                <p className="text-xs font-medium">{product.name}</p>
+                <ul className="mt-1 space-y-1">
+                  {product.retailPrices?.map((price) => <li key={price.packageQuantity} className="flex flex-wrap items-baseline justify-between gap-x-3 text-[11px] text-muted">
+                    <span>{price.packageQuantity} · {new Intl.NumberFormat("fr-CA", { style: "currency", currency: "CAD" }).format(price.priceCad)} ({new Intl.NumberFormat("fr-CA", { style: "currency", currency: "CAD" }).format(price.priceCad / price.packageVolumeLiters)}/L)</span>
+                    <a href={price.sourceUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">{price.retailer} ↗</a>
+                  </li>)}
+                </ul>
+                <p className="mt-1 text-[10px] leading-relaxed text-subtle">Relevé le {product.retailPrices?.[0]?.checkedAt}. Prix affichés par un seul détaillant, non une moyenne du marché; taxes, livraison et variations régionales en sus.</p>
+              </div>)}
+            </div>
+          </details>}
+          <div className="mt-2 space-y-2">{filteredCatalog.map((product) => { const added = table.products.some((item) => item.id === product.id); const chartDose = table.chartSourceUrl && table.chartId ? OFFICIAL_CHARTS[table.chartId]?.doses[product.id] : undefined; const categories = getProductCategories(product); return <article key={product.id} className="group rounded-2xl border border-border/70 bg-surface p-3 transition hover:border-primary/35 hover:bg-elevated"><div className="flex items-start gap-3">{product.imageUrl ? <img src={product.imageUrl} alt={`Emballage officiel de ${product.name}`} loading="lazy" referrerPolicy="no-referrer" className="size-12 shrink-0 rounded-lg border border-border/70 bg-white object-contain p-1" /> : <span aria-hidden="true" className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: product.color }} />}<div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{product.name}</p><p className="mt-0.5 truncate text-[11px] text-muted">{product.brand} · {product.role}</p>{product.packageQuantity && <p className="mt-0.5 text-[10px] text-subtle">Format vérifié : {product.packageQuantity}</p>}</div><button type="button" onClick={() => setSelectedProductDetails(product)} aria-label={`Informations et mode d’emploi de ${product.name}`} className="grid size-8 shrink-0 place-items-center rounded-lg bg-elevated text-muted transition hover:bg-chip hover:text-fg"><Info className="size-4" /></button><button type="button" disabled={added} onClick={() => addProduct(product)} aria-label={added ? `${product.name} déjà ajouté` : `Ajouter ${product.name}`} className={cn("grid size-8 shrink-0 place-items-center rounded-lg transition", added ? "bg-chip text-primary" : "bg-elevated text-muted hover:bg-primary hover:text-primary-fg")}>{added ? <Check className="size-4" /> : <Plus className="size-4" />}</button></div><p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-subtle">{product.description}</p>{product.retailPrices?.length ? <p className="mt-2 text-[10px] font-medium text-primary">Prix Canada relevés : {product.retailPrices.length} formats · {new Intl.NumberFormat("fr-CA", { style: "currency", currency: "CAD" }).format(Math.min(...product.retailPrices.map((price) => price.priceCad)))}–{new Intl.NumberFormat("fr-CA", { style: "currency", currency: "CAD" }).format(Math.max(...product.retailPrices.map((price) => price.priceCad)))} (détails)</p> : null}<div className="mt-2 flex flex-wrap items-center gap-1.5"><Badge className="bg-chip px-2 py-0.5 text-[10px] text-muted">{product.range}</Badge>{categories.slice(0, 2).map((category) => <Badge key={category} className="bg-primary/10 px-2 py-0.5 text-[10px] text-primary">{category === "pk-booster" ? "Booster PK · NPK à vérifier" : PRODUCT_CATEGORY_LABELS[category]}</Badge>)}<span className="font-mono text-[10px] text-subtle">{product.unit}</span>{chartDose && <Badge className="bg-primary/10 px-2 py-0.5 text-[10px] text-primary">Dosage fabricant vérifié</Badge>}</div></article>; })}</div>
+          {manufacturerSearchResult && <section aria-label="Résultats des sites officiels" className="mt-4 space-y-2"><div className="rounded-xl border border-primary/20 bg-primary/5 p-3"><p className="text-xs font-medium text-fg">Résultats officiels pour « {manufacturerSearchResult.query} »</p><p className="mt-1 text-[11px] leading-relaxed text-muted">Les fiches sont récupérées depuis les domaines des fabricants. Le format n’est indiqué que s’il apparaît dans les données structurées de la page; un dosage est prérempli uniquement si un tableau officiel compatible est connu.</p></div>{manufacturerSearchResult.products.map((candidate) => { const normalizedName = normalizeProductName(candidate.name); const knownProduct = CATALOG.find((product) => product.brand.toLowerCase() === candidate.brand.toLowerCase() && (normalizedName === normalizeProductName(product.name) || normalizedName.startsWith(`${normalizeProductName(product.name)} `))); const hasDoseChart = Boolean(knownProduct && officialDosesFor(table, knownProduct.id)); return <article key={candidate.id} className="rounded-2xl border border-border/70 bg-surface p-3"><div className="flex items-start gap-3">{candidate.imageUrl && <img src={candidate.imageUrl} alt={`Emballage officiel de ${candidate.name}`} loading="lazy" referrerPolicy="no-referrer" className="size-14 shrink-0 rounded-lg border border-border/70 bg-white object-contain p-1" />}<div className="min-w-0 flex-1"><h3 className="text-sm font-medium">{candidate.name}</h3><p className="text-[11px] text-muted">{candidate.brand} · {candidate.kind === "range" ? "gamme officielle" : "produit officiel"}</p></div><Button type="button" size="sm" variant="outline" onClick={() => { setSelectedManufacturerProduct(candidate); setManufacturerProductUnit(knownProduct?.unit ?? "ml"); }}>{candidate.kind === "range" ? "Vérifier la gamme" : "Vérifier le produit"}</Button></div><p className="mt-2 text-[11px] leading-relaxed text-muted">{candidate.description || "Le fabricant ne publie pas de description dans les métadonnées de cette page."}</p>{candidate.kind === "product" && <p className="mt-2 text-[11px] text-muted">Format emballage : {candidate.packageQuantity ?? "non indiqué par la page officielle"}</p>}<p className="mt-1 text-[11px]">{hasDoseChart ? <span className="text-ok">Dosage disponible dans le tableau officiel adapté à cette recette.</span> : candidate.kind === "range" && officialChartForRange(candidate) ? <span className="text-ok">Un tableau officiel correspondant sera associé à cette gamme.</span> : <span className="text-muted">Dosage non vérifié pour cette recette; aucun dosage ne sera inventé.</span>}</p><a href={candidate.sourceUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-[11px] text-primary underline-offset-2 hover:underline">Ouvrir la fiche officielle ↗</a></article>; })}{manufacturerSearchResult.unavailableSources.map((source) => <p key={source.brand} className="rounded-lg border border-border bg-elevated p-2 text-[11px] text-muted">{source.brand} : recherche indisponible — {source.message}</p>)}</section>}
           {filteredCatalog.length === 0 && <div className="py-10 text-center"><Search className="mx-auto mb-3 size-6 text-subtle" /><p className="text-sm text-muted">Aucun produit trouvé</p><button type="button" onClick={() => { setSearch(""); setShowManualProduct(true); }} className="mt-2 text-xs text-primary hover:underline">Ajouter manuellement</button></div>}
           <Separator className="my-5 bg-border/70" />
           <Button variant="outline" className="w-full border-dashed border-border bg-transparent text-muted hover:bg-elevated hover:text-fg" onClick={() => setShowManualProduct(true)}><Plus className="size-4" /> Ajouter manuellement</Button>
@@ -2423,7 +2611,7 @@ export default function Home() {
       {showEditTable && <Modal title="Modifier la table active" onClose={() => setShowEditTable(false)}><form onSubmit={updateTable} className="space-y-4"><Field label="Nom de la table"><Input autoFocus required value={editedTable.name} onChange={(event) => setEditedTable({ ...editedTable, name: event.target.value })} /></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Gamme / marque"><Input value={editedTable.brand} onChange={(event) => setEditedTable({ ...editedTable, brand: event.target.value })} /></Field><Field label="Support"><Input value={editedTable.medium} onChange={(event) => setEditedTable({ ...editedTable, medium: event.target.value })} /></Field></div><ImageField label="Logo de la marque ou image de gamme" value={editedTable.brandImageUrl} onChange={(brandImageUrl) => setEditedTable({ ...editedTable, brandImageUrl })} /><Field label="Description"><textarea value={editedTable.description} onChange={(event) => setEditedTable({ ...editedTable, description: event.target.value })} className="min-h-24 w-full resize-none rounded-xl border border-border bg-elevated px-3 py-3 text-sm text-fg outline-none focus:border-primary/60" /></Field><p className="text-[11px] leading-relaxed text-muted">Logo enregistré sur cet appareil. Une image téléversée est redimensionnée et compressée.</p><div className="flex justify-end gap-2 pt-2"><Button type="button" variant="ghost" onClick={() => setShowEditTable(false)}>Annuler</Button><Button type="submit"><Pencil className="size-4" /> Enregistrer</Button></div></form></Modal>}
       {editedProduct && <Modal title={`Modifier ${editedProduct.name}`} onClose={() => setEditedProduct(null)}><form onSubmit={updateProductDetails} className="space-y-4"><Field label="Nom du produit"><Input aria-label="Nom du produit" autoFocus required maxLength={100} value={editedProduct.name} onChange={(event) => setEditedProduct({ ...editedProduct, name: event.target.value })} /></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Marque"><Input aria-label="Marque du produit" maxLength={100} value={editedProduct.brand} onChange={(event) => setEditedProduct({ ...editedProduct, brand: event.target.value })} /></Field><Field label="Gamme"><Input aria-label="Gamme du produit" maxLength={120} value={editedProduct.range} onChange={(event) => setEditedProduct({ ...editedProduct, range: event.target.value })} /></Field></div><ImageField label="Image du produit" value={editedProduct.imageUrl ?? ""} onChange={(imageUrl) => setEditedProduct({ ...editedProduct, imageUrl: imageUrl || undefined })} /><div className="grid gap-4 sm:grid-cols-2"><Field label="Rôle"><Input aria-label="Rôle du produit" maxLength={100} value={editedProduct.role} onChange={(event) => setEditedProduct({ ...editedProduct, role: event.target.value })} /></Field><Field label="Unité de dosage"><select aria-label="Unité de dosage du produit" value={editedProduct.unit} onChange={(event) => { const unit = event.target.value; if (unit === "ml" || unit === "g") setEditedProduct({ ...editedProduct, unit }); }} className="h-10 w-full rounded-md border border-border bg-elevated px-3 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><option value="ml">ml/L</option><option value="g">g/L</option></select></Field></div><Field label="Description"><textarea aria-label="Description du produit" maxLength={500} value={editedProduct.description} onChange={(event) => setEditedProduct({ ...editedProduct, description: event.target.value })} className="min-h-24 w-full resize-none rounded-xl border border-border bg-elevated px-3 py-3 text-sm text-fg outline-none focus:border-primary/60" /></Field><p className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] leading-relaxed text-muted">Les changements s’appliquent à ce produit dans la table active seulement. Les doses existantes sont conservées; si vous changez l’unité, la vérification officielle du dosage est retirée. Vérifiez les quantités avant préparation. Les informations fabricant restent inchangées.</p><div className="flex justify-end gap-2 pt-2"><Button type="button" variant="ghost" onClick={() => setEditedProduct(null)}>Annuler</Button><Button type="submit"><Pencil className="size-4" /> Enregistrer</Button></div></form></Modal>}
       {showCycleTemplates && <Modal title="Mes cycles personnalisés" onClose={() => setShowCycleTemplates(false)}><div className="space-y-5"><form onSubmit={saveCycleTemplate} className="rounded-2xl border border-primary/20 bg-primary/5 p-4"><p className="text-sm font-medium">Enregistrer le cycle actif</p><p className="mt-1 text-xs leading-relaxed text-muted">Les étapes, durées, produits et doses de « {table.name} » seront conservés comme modèle indépendant.</p><div className="mt-3 flex flex-col gap-2 sm:flex-row"><Input required maxLength={80} aria-label="Nom du nouveau modèle de cycle" value={cycleTemplateName} onChange={(event) => setCycleTemplateName(event.target.value)} placeholder="Nom du modèle" className="min-w-0 border-border bg-elevated" /><Button type="submit" className="shrink-0"><BookmarkPlus className="size-4" /> Enregistrer</Button></div></form><div><div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-medium">Modèles enregistrés</h3><Badge className="bg-elevated text-muted">{cycleTemplates.length}</Badge></div>{cycleTemplates.length === 0 ? <p className="rounded-xl bg-elevated/50 px-3 py-5 text-center text-xs text-muted">Aucun modèle pour l’instant. Enregistrez votre cycle ci-dessus.</p> : <div className="max-h-[40vh] space-y-2 overflow-y-auto pr-1">{cycleTemplates.map((template) => <article key={template.id} className="rounded-xl border border-border/70 bg-elevated/35 p-3"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{template.name}</p><p className="mt-1 text-[11px] text-muted">{template.table.weeks.length} semaines · {template.table.products.length} produits · enregistré le {new Date(template.savedAt).toLocaleDateString("fr-FR")}</p><p className="mt-1 text-[10px] text-subtle">{template.table.brand} · {template.table.medium}</p></div><div className="flex shrink-0 gap-1"><Button type="button" size="sm" variant="outline" onClick={() => applyCycleTemplate(template)}>Charger</Button><button type="button" onClick={() => { const name = window.prompt("Nouveau nom du modèle", template.name); if (name !== null) renameCycleTemplate(template, name); }} aria-label={`Renommer le modèle ${template.name}`} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-chip hover:text-fg"><Pencil className="size-3.5" /></button><button type="button" onClick={() => deleteCycleTemplate(template)} aria-label={`Supprimer le modèle ${template.name}`} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-red-500/10 hover:text-red-600"><Trash2 className="size-3.5" /></button></div></div></article>)}</div>}</div><div className="flex justify-end"><Button type="button" variant="ghost" onClick={() => setShowCycleTemplates(false)}>Fermer</Button></div></div></Modal>}
-      {selectedProductDetails && <Modal title="Fiche produit" onClose={() => setSelectedProductDetails(null)}><div className="space-y-4"><div className="flex items-start gap-3"><span className="mt-1 size-3 shrink-0 rounded-full" style={{ background: selectedProductDetails.color }} /><div><h3 className="font-medium">{selectedProductDetails.name}</h3><p className="mt-1 text-xs text-muted">{selectedProductDetails.brand} · {selectedProductDetails.role} · {selectedProductDetails.unit}/L</p></div></div><p className="whitespace-pre-line text-sm leading-relaxed text-muted">{selectedProductDetails.description}</p><div className="flex flex-wrap gap-1.5">{getProductCategories(selectedProductDetails).map((category) => <Badge key={category} className="bg-primary/10 text-primary">{category === "pk-booster" ? "Booster PK · teneur exacte à vérifier" : PRODUCT_CATEGORY_LABELS[category]}</Badge>)}</div><div className="rounded-xl border border-border/70 bg-elevated/50 p-4"><p className="text-xs font-medium">Mode d’emploi — repères prudents</p><p className="mt-2 text-xs leading-relaxed text-muted">{selectedProductDetails.application || getProductUsage(selectedProductDetails)}</p><p className="mt-2 text-[10px] leading-relaxed text-subtle">Toujours suivre l’étiquette et le tableau officiels correspondant au produit et au support. Ne combinez pas des dosages provenant de tableaux différents.</p></div>{selectedProductDetails.nutrientProfile && <div className="rounded-xl bg-elevated p-3 text-xs text-muted"><span className="font-medium text-fg">Profil nutritif publié :</span> {selectedProductDetails.nutrientProfile}</div>}{selectedProductDetails.doseVerified ? <p className="rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-fg">Dosages hebdomadaires vérifiés pour {table.name}. <a href={selectedProductDetails.doseSourceUrl || table.chartSourceUrl} target="_blank" rel="noreferrer" className="ml-1 text-primary underline-offset-2 hover:underline">Voir le tableau fabricant ↗</a></p> : <p className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted">Aucun dosage officiel compatible n’est vérifié pour la table active. Ne pas extrapoler un dosage d’une autre gamme.</p>}{(selectedProductDetails.sourceUrl || table.chartSourceUrl) && <div className="flex flex-wrap gap-3 text-xs">{selectedProductDetails.sourceUrl && <a href={selectedProductDetails.sourceUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">Fiche fabricant ↗</a>}{table.chartSourceUrl && <a href={table.chartSourceUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">Tableau source de la recette ↗</a>}</div>}<div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setSelectedProductDetails(null)}>Fermer</Button>{!table.products.some((product) => product.id === selectedProductDetails.id) && <Button type="button" onClick={() => { addProduct(selectedProductDetails); setSelectedProductDetails(null); }}><Plus className="size-4" /> Ajouter à la recette</Button>}</div></div></Modal>}
+      {selectedProductDetails && <Modal title="Fiche produit" onClose={() => setSelectedProductDetails(null)}><div className="space-y-4">{selectedProductDetails.imageUrl && <img src={selectedProductDetails.imageUrl} alt={`Emballage officiel de ${selectedProductDetails.name}`} referrerPolicy="no-referrer" className="mx-auto max-h-56 max-w-full rounded-xl bg-white object-contain p-3" />}<div className="flex items-start gap-3"><span className="mt-1 size-3 shrink-0 rounded-full" style={{ background: selectedProductDetails.color }} /><div><h3 className="font-medium">{selectedProductDetails.name}</h3><p className="mt-1 text-xs text-muted">{selectedProductDetails.brand} · {selectedProductDetails.role} · {selectedProductDetails.unit}/L</p>{selectedProductDetails.packageQuantity && <p className="mt-1 text-xs text-muted">Conditionnement observé : {selectedProductDetails.packageQuantity}</p>}</div></div><p className="whitespace-pre-line text-sm leading-relaxed text-muted">{selectedProductDetails.description}</p><div className="flex flex-wrap gap-1.5">{getProductCategories(selectedProductDetails).map((category) => <Badge key={category} className="bg-primary/10 text-primary">{category === "pk-booster" ? "Booster PK · teneur exacte à vérifier" : PRODUCT_CATEGORY_LABELS[category]}</Badge>)}</div><div className="rounded-xl border border-border/70 bg-elevated/50 p-4"><p className="text-xs font-medium">Mode d’emploi — repères prudents</p><p className="mt-2 text-xs leading-relaxed text-muted">{selectedProductDetails.application || getProductUsage(selectedProductDetails)}</p><p className="mt-2 text-[10px] leading-relaxed text-subtle">Toujours suivre l’étiquette et le tableau officiels correspondant au produit et au support. Ne combinez pas des dosages provenant de tableaux différents.</p></div>{selectedProductDetails.nutrientProfile && <div className="rounded-xl bg-elevated p-3 text-xs text-muted"><span className="font-medium text-fg">Profil nutritif publié :</span> {selectedProductDetails.nutrientProfile}</div>}<div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-relaxed text-muted"><strong className="text-fg">Sécurité d’emploi :</strong> suivre les pictogrammes et précautions propres au flacon, porter les protections indiquées et conserver le produit hors de portée des enfants. La formulation et les risques varient selon le produit; consulter la fiche de sécurité du fabricant.</div>{selectedProductDetails.doseVerified ? <p className="rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-fg">Dosages hebdomadaires vérifiés pour {table.name}. <a href={selectedProductDetails.doseSourceUrl || table.chartSourceUrl} target="_blank" rel="noreferrer" className="ml-1 text-primary underline-offset-2 hover:underline">Voir le tableau fabricant ↗</a></p> : <p className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted">Aucun dosage officiel compatible n’est vérifié pour la table active. Ne pas extrapoler un dosage d’une autre gamme.</p>}{(selectedProductDetails.sourceUrl || table.chartSourceUrl) && <div className="flex flex-wrap gap-3 text-xs">{selectedProductDetails.sourceUrl && <a href={selectedProductDetails.sourceUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">Fiche fabricant ↗</a>}{table.chartSourceUrl && <a href={table.chartSourceUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">Tableau source de la recette ↗</a>}</div>}<div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setSelectedProductDetails(null)}>Fermer</Button>{!table.products.some((product) => product.id === selectedProductDetails.id) && <Button type="button" onClick={() => { addProduct(selectedProductDetails); setSelectedProductDetails(null); }}><Plus className="size-4" /> Ajouter à la recette</Button>}</div></div></Modal>}
       {showCycleSettings && <Modal title="Paramètres du cycle" onClose={() => setShowCycleSettings(false)}><div className="space-y-4"><p className="text-sm leading-relaxed text-muted">Renommez, reclassifiez ou supprimez une semaine, ou ajoutez-en autant que nécessaire. Les semaines végétatives, de floraison et de Flush ne sont soumises à aucune limite.</p><div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">{table.weeks.map((label, index) => { const phase = getWeekPhase(table, index); return <div key={`${index}-${phase}`} className="flex items-center gap-2 rounded-xl border border-border/70 bg-elevated/50 p-2"><select aria-label={`Phase de la semaine ${index + 1}`} value={phase} onChange={(event) => { const value = event.target.value; if (value === "vegetative" || value === "flowering" || value === "flush" || value === "other") updateWeekPhase(index, value); }} className="h-9 w-28 shrink-0 rounded-md border border-border bg-surface px-2 text-xs text-fg"><option value="vegetative">Végétatif</option><option value="flowering">Floraison</option><option value="flush">Flush</option><option value="other">Autre</option></select><Input aria-label={`Nom de la semaine ${index + 1}`} maxLength={40} value={label} onChange={(event) => updateWeekLabel(index, event.target.value)} onBlur={(event) => { if (!event.target.value.trim()) updateWeekLabel(index, `${phase === "vegetative" ? "Veg" : phase === "flowering" ? "Flo" : phase === "flush" ? "Flush" : "Semaine"} ${index + 1}`); }} className="min-w-0 border-border bg-surface text-sm" /><button type="button" onClick={() => deleteCycleWeek(index)} className="grid size-9 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-red-500/10 hover:text-red-600" aria-label={`Supprimer ${label || `la semaine ${index + 1}`}`}><Trash2 className="size-4" /></button></div>; })}</div><div className="grid gap-2 sm:grid-cols-3"><Button type="button" variant="outline" onClick={() => addCycleWeek("vegetative")}><Plus className="size-4" /> Ajouter végétatif</Button><Button type="button" variant="outline" onClick={() => addCycleWeek("flowering")}><Plus className="size-4" /> Ajouter floraison</Button><Button type="button" variant="outline" onClick={() => addCycleWeek("flush")}><Plus className="size-4" /> Ajouter Flush</Button></div><div className="flex justify-end pt-1"><Button type="button" onClick={() => setShowCycleSettings(false)}>Terminé</Button></div></div></Modal>}
       {selectedManufacturerProduct && <Modal title={selectedManufacturerProduct.kind === "range" ? "Vérifier la gamme fabricant" : "Vérifier la fiche fabricant"} onClose={() => setSelectedManufacturerProduct(null)}><div className="space-y-4"><div><h3 className="font-medium">{selectedManufacturerProduct.name}</h3><p className="text-xs text-muted">{selectedManufacturerProduct.brand} · {selectedManufacturerProduct.kind === "range" ? "gamme" : "produit"} trouvé sur le domaine officiel</p></div><p className="text-sm leading-relaxed text-muted">{selectedManufacturerProduct.description || "Aucune description disponible dans les métadonnées de la page."}</p>{selectedManufacturerProduct.kind === "product" && <p className="rounded-xl bg-elevated p-3 text-xs text-muted">Quantité du conditionnement : <strong>{selectedManufacturerProduct.packageQuantity ?? "non publiée dans les données structurées"}</strong></p>}<a href={selectedManufacturerProduct.sourceUrl} target="_blank" rel="noreferrer" className="inline-block text-xs text-primary underline-offset-2 hover:underline">Vérifier la page source ↗</a><div className={cn("rounded-xl border p-3 text-xs leading-relaxed", selectedProductDoses || selectedRangeChart ? "border-primary/30 bg-primary/5 text-fg" : "border-amber-500/30 bg-amber-500/5 text-muted")}>{selectedManufacturerProduct.kind === "range" ? selectedRangeChart ? <><strong>Tableau fabricant compatible : {selectedRangeChart.name}.</strong><p className="mt-1">La gamme sera ajoutée avec ses étapes officielles. Choisissez ensuite les produits à doser dans la bibliothèque.</p></> : <><strong>Dosages non vérifiés pour cette gamme.</strong><p className="mt-1">Une table sera créée, mais aucun dosage ne sera inventé.</p></> : selectedProductDoses ? <><strong>Dosage fabricant trouvé pour cette recette.</strong><ul className="mt-2 grid grid-cols-2 gap-1">{table.weeks.map((stage, index) => selectedProductDoses[index] > 0 ? <li key={`${stage}-${index}`}>{stage} : {formatDose(selectedProductDoses[index])} {selectedCatalogProduct?.unit}/L</li> : null)}</ul></> : <><strong>Dosage non vérifié pour cette recette.</strong><p className="mt-1">Aucun dosage ne sera inventé : le produit sera ajouté avec des doses à zéro, à vérifier avant utilisation.</p></>}</div>{selectedManufacturerProduct.kind === "product" && !selectedCatalogProduct && <Field label="Unité pour saisir les doses"><select value={manufacturerProductUnit} onChange={(event) => setManufacturerProductUnit(event.target.value === "g" ? "g" : "ml")} className="h-10 w-full rounded-md border border-border bg-elevated px-3 text-sm text-fg"><option value="ml">ml/L</option><option value="g">g/L</option></select></Field>}<div className="flex justify-end gap-2 pt-2"><Button type="button" variant="ghost" onClick={() => setSelectedManufacturerProduct(null)}>Annuler</Button><Button type="button" onClick={() => addManufacturerProduct(selectedManufacturerProduct)}><Plus className="size-4" /> {selectedManufacturerProduct.kind === "range" ? "Ajouter la gamme" : "Confirmer et ajouter"}</Button></div></div></Modal>}
       {showManualProduct && <Modal title="Ajouter un produit manuellement" onClose={() => setShowManualProduct(false)}><form onSubmit={createManualProduct} className="space-y-4"><Field label="Nom du produit"><Input autoFocus required value={manualProduct.name} onChange={(event) => setManualProduct({ ...manualProduct, name: event.target.value })} placeholder="Ex. Silice maison" /></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Marque"><Input value={manualProduct.brand} onChange={(event) => setManualProduct({ ...manualProduct, brand: event.target.value })} placeholder="Optionnel" /></Field><Field label="Rôle"><Input value={manualProduct.role} onChange={(event) => setManualProduct({ ...manualProduct, role: event.target.value })} placeholder="Booster, base…" /></Field></div><Field label="Unité"><div className="flex gap-2">{(["ml", "g"] as const).map((unit) => <button type="button" key={unit} onClick={() => setManualProduct({ ...manualProduct, unit })} className={cn("flex-1 rounded-xl border py-3 text-sm", manualProduct.unit === unit ? "border-primary bg-primary/10 text-primary" : "border-border bg-elevated text-muted")}>{unit}</button>)}</div></Field><div className="flex justify-end gap-2 pt-2"><Button type="button" variant="ghost" onClick={() => setShowManualProduct(false)}>Annuler</Button><Button type="submit"><Plus className="size-4" /> Ajouter au tableau</Button></div></form></Modal>}

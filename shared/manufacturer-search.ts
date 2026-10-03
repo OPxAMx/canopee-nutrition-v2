@@ -6,6 +6,7 @@ export type ManufacturerProductCandidate = {
   sourceUrl: string;
   description: string;
   packageQuantity: string | null;
+  imageUrl?: string;
   sourceVerified: true;
 };
 
@@ -258,6 +259,17 @@ function metaContent(html: string, key: string) {
   return patterns.map((pattern) => html.match(pattern)?.[1]).find(Boolean);
 }
 
+function officialProductImage(html: string, sourceUrl: string) {
+  const image = metaContent(html, "og:image") ?? metaContent(html, "twitter:image");
+  if (!image) return undefined;
+  try {
+    const url = new URL(cleanText(image), sourceUrl);
+    return url.protocol === "https:" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function productJsonLd(value: unknown): Record<string, unknown> | undefined {
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -310,6 +322,7 @@ async function scrapeCandidate(source: ManufacturerSource, result: { name: strin
     sourceUrl,
     description: cleanText(description ?? ""),
     packageQuantity: packageQuantity(html),
+    imageUrl: officialProductImage(html, sourceUrl),
     sourceVerified: true,
   };
 }
